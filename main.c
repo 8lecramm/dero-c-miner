@@ -605,7 +605,7 @@ void send_queued_solutions(MinerState *state)
             time(&rawtime);
             struct tm *info = localtime(&rawtime);
 
-            printf("\rThread %s%d%s found a nonce! Height %s%ld%s (diff %s%.0f%s) %s",
+            printf("\n\rThread %s%d%s found a nonce! Height %s%ld%s (diff %s%.0f%s) %s",
                    KRED, entry.thread_id, KNRM, KCYN, state->height, KNRM, KYEL, state->difficulty, KNRM,
                    asctime(info));
         }
@@ -631,7 +631,7 @@ void print_status(MinerState *state)
     if (!state)
         return;
 
-    printf("\r Height: %s%10ld%s | Diff: %s%12.0f%s | HR: %6s%d H/s%s | "
+    printf("\rHeight: %s%10ld%s | Diff: %s%12.0f%s | HR: %6s%d H/s%s | "
            "Blocks: %s%4d%s | MBLs: %s%4d%s | Rejects: %s%4d%s\t\t\r",
            KCYN, state->height, KNRM,
            KYEL, state->difficulty, KNRM,

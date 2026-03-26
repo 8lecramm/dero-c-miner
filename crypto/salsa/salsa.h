@@ -17,13 +17,13 @@ static const char sigma[16] = "expand 32-byte k";
 void XORKeyStream(uint8_t *out, const uint8_t *in, const uint8_t *nonce,
                   const uint8_t *key, size_t size);
 
-/* Salsa20 with runtime CPU detection
- * These functions automatically select the best implementation:
- * - SSE4.1 optimized on x86-64 systems that support it
- * - Portable C fallback on other systems */
-void salsa20(const void *key, const void *iv);
-void salsa20_init(const void *key, const void *iv);
-void salsa20_keystream(void *out, unsigned int bytes);
+#ifdef __x86_64__
+/* Salsa20 wrapper - x86-64 only
+ * Automatically selects best implementation:
+ * - SSE4.1 optimized if CPU supports it
+ * - Portable C fallback otherwise */
+void salsa20(const void *key, const void *iv, void *out);
+#endif /* __x86_64__ */
 
 /* Print information about which Salsa20 implementation will be used */
 void print_salsa20_info(void);

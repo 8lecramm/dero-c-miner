@@ -318,48 +318,23 @@ void print_salsa20_info(void)
     }
 }
 
+#ifdef __x86_64__
+
 /**
  * Salsa20 initialization wrapper
  * Dispatches to SSE4.1 version if available, otherwise uses fallback
  */
-void salsa20(const void *key, const void *iv)
+void salsa20(const void *key, const void *iv, void *out)
 {
     if (check_sse4_1_support())
     {
         salsa20_sse4_1(key, iv);
-        return;
+        salsa20_keystream_sse4_1(out, 256);
     }
-    /* Fallback: portable implementation needs different API
-     * Note: For non-SSE4.1 systems, use XORKeyStream() directly instead */
+    else
+    {
+        XORKeyStream(out, out, iv, key, 256);
+    }
 }
 
-/**
- * Salsa20 key schedule wrapper
- * Dispatches to SSE4.1 version if available, otherwise uses fallback
- */
-void salsa20_init(const void *key, const void *iv)
-{
-    if (check_sse4_1_support())
-    {
-        salsa20_sse4_1(key, iv);
-        return;
-    }
-    /* Fallback: portable implementation uses XORKeyStream()
-     * This is a stateless API, so no init needed */
-}
-
-/**
- * Salsa20 keystream generator wrapper
- * Dispatches to SSE4.1 version if available
- * Note: This function requires preceding call to salsa20_init()
- */
-void salsa20_keystream(void *out, unsigned int bytes)
-{
-    if (check_sse4_1_support())
-    {
-        salsa20_keystream_sse4_1(out, bytes);
-        return;
-    }
-    /* Fallback: On systems without SSE4.1, applications should use
-     * XORKeyStream() which provides better compatibility */
-}
+#endif /* __x86_64__ */

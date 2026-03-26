@@ -49,11 +49,13 @@ void AstroBWTv3(uint8_t *input, uint8_t *output)
 	SHA256_Update(&c, input, MINIBLOCK_SIZE);
 	SHA256_Final(digest, &c);
 
-	// falsa (fast + salsa = falsa) is much faster than native implementation
-	// copied and modified from libsodium
-	// Runtime CPU detection is performed inside salsa20 functions
-	salsa20(digest, counter);
-	salsa20_keystream(step_3, STEP_3_SIZE);
+// Salsa20: copied and modified from libsodium
+// Runtime CPU detection is performed inside salsa20 functions
+#ifdef __x86_64__
+	salsa20(digest, counter, step_3);
+#else
+	XORKeyStream(step_3, step_3, counter, digest, STEP_3_SIZE);
+#endif
 
 	RC4_set_key(&rc4_key, STEP_3_SIZE, step_3);
 	RC4(&rc4_key, STEP_3_SIZE, step_3, step_3);
