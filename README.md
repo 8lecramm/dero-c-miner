@@ -12,7 +12,7 @@ A mining client for the DERO blockchain, written in C.
 
 ### Requirements
 
-- GCC or Clang compiler
+- GCC compiler
 - OpenSSL dev libraries (`libssl-dev`)
 - cJSON (`libcjson-dev`)
 - GMP (`libgmp-dev`)
