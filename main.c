@@ -339,9 +339,18 @@ int main(int argc, char **argv)
 
             if (bytes_read <= 0)
             {
+                miner_state.fail_counter++;
+                if (miner_state.fail_counter >= 5)
+                {
+                    fprintf(stderr, "Connection unstable (fail_counter=%d), reconnecting...\n", miner_state.fail_counter);
+                    break; /* Exit loop to reconnect */
+                }
                 usleep(100000); /* 100ms */
                 continue;
             }
+
+            /* Reset failure counter on successful read */
+            miner_state.fail_counter = 0;
 
             if (buffer[0] != 0x81 || bytes_read < 4)
             {
@@ -395,10 +404,10 @@ int main(int argc, char **argv)
                     miner_state.blob_hash = new_blob;
                     miner_state.job_id = new_job_id;
                     miner_state.difficulty = diff->valuedouble;
-                    miner_state.height = height_obj->valueint;
-                    miner_state.blocks_count = blocks->valueint;
-                    miner_state.miniblocks_count = miniblocks->valueint;
-                    miner_state.rejects_count = rejects->valueint;
+                    miner_state.height = (uint64_t)height_obj->valuedouble;
+                    miner_state.blocks_count = (uint32_t)blocks->valuedouble;
+                    miner_state.miniblocks_count = (uint32_t)miniblocks->valuedouble;
+                    miner_state.rejects_count = (uint32_t)rejects->valuedouble;
                     atomic_fetch_add(&miner_state.template_version, 1);
 
                     pthread_mutex_unlock(&miner_state.job_lock);
@@ -718,6 +727,12 @@ static void *mine_block_worker(void *arg)
 
         /* Increment hash counter */
         atomic_fetch_add(&state->hashrate, 1);
+
+        /* Check if template has been updated - if so, reload job to get new height */
+        if (atomic_load(&state->template_version) != last_template_version)
+        {
+            continue; /* Break out of mining loop and reload job with new template */
+        }
 
         /* Update hash rate every second (only main thread) */
         if (tid == 0)

@@ -49,8 +49,6 @@ void AstroBWTv3(uint8_t *input, uint8_t *output)
 	SHA256_Update(&c, input, MINIBLOCK_SIZE);
 	SHA256_Final(digest, &c);
 
-// Salsa20: copied and modified from libsodium
-// Runtime CPU detection is performed inside salsa20 functions
 #ifdef __x86_64__
 	salsa20(digest, counter, step_3);
 #else

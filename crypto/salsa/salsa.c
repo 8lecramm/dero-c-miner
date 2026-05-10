@@ -1,5 +1,5 @@
 /*
- * Salsa20 Stream Cipher Implementation
+ * Salsa20 Stream Cipher Implementation (libsodium)
  * Includes both portable C implementation and SSE4.1-optimized variant
  * Runtime CPU detection is performed to select the best available implementation
  */
