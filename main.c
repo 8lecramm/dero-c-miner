@@ -70,6 +70,10 @@ void send_template(MinerState *state, char *json, int tid);
 void print_status(MinerState *state);
 static int allocate_workspace(uint8_t **workplace, size_t size, bool try_hugepages);
 static void free_workspace(uint8_t *workplace, size_t size);
+static int normalize_node_info(const char *node,
+                               char *connect_target, size_t connect_target_size,
+                               char *host_header, size_t host_header_size,
+                               char *sni_host, size_t sni_host_size);
 
 static void on_signal_int(int sig)
 {
@@ -116,6 +120,92 @@ static void free_workspace(uint8_t *workplace, size_t size)
     {
         munmap(workplace, size);
     }
+}
+
+/* Parse node into TLS connect target, HTTP Host header, and SNI hostname. */
+static int normalize_node_info(const char *node,
+                               char *connect_target, size_t connect_target_size,
+                               char *host_header, size_t host_header_size,
+                               char *sni_host, size_t sni_host_size)
+{
+    if (!node || !connect_target || !host_header || !sni_host ||
+        connect_target_size == 0 || host_header_size == 0 || sni_host_size == 0)
+    {
+        return -1;
+    }
+
+    const char *start = node;
+    const char *scheme = strstr(node, "://");
+    if (scheme)
+    {
+        start = scheme + 3;
+    }
+
+    size_t authority_len = strcspn(start, "/");
+    if (authority_len == 0 || authority_len >= host_header_size)
+    {
+        return -1;
+    }
+
+    memcpy(host_header, start, authority_len);
+    host_header[authority_len] = '\0';
+
+    const char *host_start = host_header;
+    const char *host_end = host_header + authority_len;
+    const char *port_sep = NULL;
+
+    if (host_header[0] == '[')
+    {
+        const char *closing = strchr(host_header, ']');
+        if (!closing)
+        {
+            return -1;
+        }
+        if (closing[1] == ':')
+        {
+            port_sep = closing + 1;
+        }
+        host_start = host_header + 1;
+        host_end = closing;
+    }
+    else
+    {
+        port_sep = strrchr(host_header, ':');
+        if (port_sep)
+        {
+            const char *first_colon = strchr(host_header, ':');
+            if (first_colon != port_sep)
+            {
+                /* Unbracketed IPv6 literal without an explicit port. */
+                port_sep = NULL;
+            }
+        }
+    }
+
+    size_t sni_len = (size_t)(host_end - host_start);
+    if (sni_len == 0 || sni_len >= sni_host_size)
+    {
+        return -1;
+    }
+    memcpy(sni_host, host_start, sni_len);
+    sni_host[sni_len] = '\0';
+
+    if (port_sep)
+    {
+        if (snprintf(connect_target, connect_target_size, "%s", host_header) >= (int)connect_target_size)
+        {
+            return -1;
+        }
+    }
+    else
+    {
+        if (snprintf(connect_target, connect_target_size, "%s:443", host_header) >= (int)connect_target_size)
+        {
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 int main(int argc, char **argv)
@@ -165,6 +255,18 @@ int main(int argc, char **argv)
     if (!node || !wallet)
     {
         fprintf(stderr, "Usage: %s -n <node> -w <wallet> [-t <threads>] [-a]\n", argv[0]);
+        goto error_exit;
+    }
+
+    char connect_target[256];
+    char host_header[256];
+    char sni_host[256];
+    if (normalize_node_info(node,
+                            connect_target, sizeof(connect_target),
+                            host_header, sizeof(host_header),
+                            sni_host, sizeof(sni_host)) != 0)
+    {
+        fprintf(stderr, "Invalid node format: %s\n", node);
         goto error_exit;
     }
 
@@ -273,7 +375,30 @@ int main(int argc, char **argv)
             continue;
         }
 
-        BIO_set_conn_hostname(miner_state.bio, node);
+        BIO_set_conn_hostname(miner_state.bio, connect_target);
+
+        SSL *ssl = NULL;
+        BIO_get_ssl(miner_state.bio, &ssl);
+        if (!ssl)
+        {
+            fprintf(stderr, "Failed to obtain SSL handle\n");
+            BIO_free(miner_state.bio);
+            miner_state.bio = NULL;
+            pthread_mutex_unlock(&miner_state.net_lock);
+            sleep(10);
+            continue;
+        }
+
+        if (SSL_set_tlsext_host_name(ssl, sni_host) != 1)
+        {
+            fprintf(stderr, "Failed to set TLS SNI host: %s\n", sni_host);
+            ERR_print_errors_fp(stderr);
+            BIO_free(miner_state.bio);
+            miner_state.bio = NULL;
+            pthread_mutex_unlock(&miner_state.net_lock);
+            sleep(10);
+            continue;
+        }
 
         if (BIO_do_connect(miner_state.bio) <= 0)
         {
@@ -304,7 +429,7 @@ int main(int argc, char **argv)
                  "Connection: upgrade\r\n"
                  "Sec-WebSocket-Key: %s\r\n"
                  "Sec-WebSocket-Version: 13\r\n\r\n",
-                 wallet, node, websocket_key);
+                 wallet, host_header, websocket_key);
 
         pthread_mutex_lock(&miner_state.net_lock);
         if (BIO_write(miner_state.bio, request, strlen(request)) <= 0)
