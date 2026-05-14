@@ -27,7 +27,7 @@ make clean && make
 ### Run
 
 ```bash
-/bin/cminer -n pool.example.com:10100 -w dero1qyf5nzqyf5nzqyf5nzqyf5nz... -t 8 -a
+bin/cminer -n pool.example.com:10100 -w dero1qyf5nzqyf5nzqyf5nzqyf5nz... -t 8 -a
 ```
 
 **Arguments:**
