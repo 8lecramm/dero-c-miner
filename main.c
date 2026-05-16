@@ -68,6 +68,7 @@ static void on_signal_int(int sig);
 static void *mine_block_worker(void *arg);
 void send_template(MinerState *state, char *json, int tid);
 void print_status(MinerState *state);
+void send_queued_solutions(MinerState *state);
 static int allocate_workspace(uint8_t **workplace, size_t size, bool try_hugepages);
 static void free_workspace(uint8_t *workplace, size_t size);
 static int normalize_node_info(const char *node,
@@ -458,12 +459,26 @@ int main(int argc, char **argv)
 
         while (!atomic_load(&miner_state.exit_flag) && miner_state.fail_counter < 20)
         {
+            /* Flush queued shares even when the server has no new template messages. */
+            send_queued_solutions(&miner_state);
+
+            int should_retry = 0;
             pthread_mutex_lock(&miner_state.net_lock);
             bytes_read = BIO_read(miner_state.bio, buffer, sizeof(buffer));
+            if (bytes_read <= 0 && miner_state.bio)
+            {
+                should_retry = BIO_should_retry(miner_state.bio);
+            }
             pthread_mutex_unlock(&miner_state.net_lock);
 
             if (bytes_read <= 0)
             {
+                if (should_retry)
+                {
+                    usleep(10000); /* 10ms */
+                    continue;
+                }
+
                 miner_state.fail_counter++;
                 if (miner_state.fail_counter >= 5)
                 {
@@ -490,9 +505,6 @@ int main(int argc, char **argv)
 
             memcpy(in_buf, &buffer[4], length);
             in_buf[length] = '\0';
-
-            /* Send any queued solutions from mining threads */
-            send_queued_solutions(&miner_state);
 
             /* Parse JSON and extract fields BEFORE acquiring job_lock */
             cJSON *template = cJSON_Parse((const char *)in_buf);
